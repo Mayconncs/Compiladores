@@ -1,0 +1,26 @@
+func maior(a, b) {
+    if (a >= b) {
+        return a;
+    }
+    return b;
+}
+
+func ataque(bonus) {
+    return maior(1d20, 1d20) + bonus;
+}
+
+vida = 40;
+rodada = 1;
+while (vida > 0 && rodada <= 10) {
+    acerto = ataque(5);
+    if (acerto == 25 || acerto >= 15) {
+        vida = vida - (2d6 * 2 + 3) / 2;
+    } else {
+        print(0);
+    }
+    print(vida);
+    rodada = rodada + 1;
+}
+if (vida != 0 && rodada < 11) {
+    print(vida);
+}
