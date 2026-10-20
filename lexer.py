@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
-"""Analisador léxico da DiceLang (TP2 - Compiladores).
-
-Entrada: código-fonte em DiceLang (arquivo como argumento ou stdin)
+"""
+Entrada: código-fonte em DiceLang
 Saída  : lista de tokens (tipo, lexema, linha, coluna)
-
-AFD dirigido por tabela + regra do casamento mais longo (maximal
-munch). Cada estado final do AFD corresponde a um tipo de token.
 """
 import sys
 from typing import NamedTuple
@@ -18,14 +14,11 @@ class Token(NamedTuple):
     coluna: int
 
 
-# -- 1. Palavras reservadas ---------------------------------
-# O AFD reconhece ID; esta tabela decide se é reservada.
 PALAVRAS_RESERVADAS = {
     "print": "PRINT", "if": "IF", "else": "ELSE", "while": "WHILE",
     "func": "FUNC", "return": "RETURN",
 }
 
-# -- 2. Alfabeto: cada caractere pertence a uma classe ------
 UNITARIOS = {
     "+": "MAIS", "-": "MENOS", "*": "MULT", "/": "DIV",
     "(": "ABRE_PAR", ")": "FECHA_PAR",
@@ -36,7 +29,6 @@ COMPOSTOS = set("=!<>&|")
 
 
 def classe(c):
-    # 'd' tem classe própria: participa da rolagem NdM
     if c == "d":
         return "D"
     if "a" <= c <= "z" or "A" <= c <= "Z":
@@ -50,17 +42,12 @@ def classe(c):
     return "OUTRO"
 
 
-# -- 3. Transição: (estado, classe) -> próximo estado -------
-# Estados finais têm o nome do token que reconhecem.
 TRANSICOES = {
-    # ID: letra (letra | dígito)*
     ("q0", "LETRA"): "ID", ("q0", "D"): "ID",
     ("ID", "LETRA"): "ID", ("ID", "D"): "ID", ("ID", "DIGITO"): "ID",
-    # NUMERO: dígito+     ROLAGEM: dígito+ d dígito+
     ("q0", "DIGITO"): "NUMERO",
     ("NUMERO", "DIGITO"): "NUMERO", ("NUMERO", "D"): "NUM_D",
     ("NUM_D", "DIGITO"): "ROLAGEM", ("ROLAGEM", "DIGITO"): "ROLAGEM",
-    # operadores de um ou dois caracteres
     ("q0", "="): "ATRIB", ("ATRIB", "="): "IGUAL",
     ("q0", "!"): "EXCL", ("EXCL", "="): "DIF",
     ("q0", "<"): "MENOR", ("MENOR", "="): "MENOR_IGUAL",
@@ -75,7 +62,6 @@ NAO_FINAIS = {"q0", "NUM_D", "EXCL", "AMP", "BARRA"}
 FINAIS = set(TRANSICOES.values()) - NAO_FINAIS
 
 
-# -- 4. Varredura: casamento mais longo ---------------------
 def analisar(fonte):
     """Retorna (tokens, erros). O último token é sempre EOF."""
     tokens, erros = [], []
@@ -84,7 +70,6 @@ def analisar(fonte):
     while i < len(fonte):
         c = fonte[i]
 
-        # 1) espaços: só atualizam linha e coluna
         if classe(c) == "ESPACO":
             if c == "\n":
                 linha, coluna = linha + 1, 1
@@ -93,7 +78,6 @@ def analisar(fonte):
             i += 1
             continue
 
-        # 2) roda o AFD de q0, lembrando o último final
         estado, j, ultimo = "q0", i, None
         while j < len(fonte):
             prox = TRANSICOES.get((estado, classe(fonte[j])))
@@ -103,7 +87,6 @@ def analisar(fonte):
             if estado in FINAIS:
                 ultimo = (j, estado)
 
-        # 3) nenhum prefixo é token: erro léxico, avança 1
         if ultimo is None:
             if classe(c) == "OUTRO":
                 msg = f"caractere inválido {c!r}"
@@ -113,7 +96,6 @@ def analisar(fonte):
             i, coluna = i + 1, coluna + 1
             continue
 
-        # 4) retrocede ao último estado final e emite o token
         fim, estado = ultimo
         lexema = fonte[i:fim]
         tipo = estado
@@ -127,7 +109,6 @@ def analisar(fonte):
     return tokens, erros
 
 
-# -- 5. Programa principal ----------------------------------
 def main():
     if len(sys.argv) > 2:
         print("uso: python lexer.py [arquivo.dice]", file=sys.stderr)

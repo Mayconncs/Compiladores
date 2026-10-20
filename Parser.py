@@ -7,7 +7,7 @@ Saida  : a arvore sintatica (AST) em formato indentado, ou os
 """
 import sys
 from typing import NamedTuple, Optional
-from Lexer import analisar, Token
+from lexer import analisar, Token
 
 
 # -- 1. Nos da AST -------------------------------------------------
