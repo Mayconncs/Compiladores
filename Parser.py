@@ -2,15 +2,15 @@
 """Analisador sintático da DiceLang.
 
 Entrada: código-fonte em DiceLang (arquivo como argumento ou stdin)
-Saida  : a arvore sintatica (AST) em formato indentado, ou os
-         erros sintaticos encontrados
+Saida  : a árvore sintática (AST) em formato indentado, ou os
+         erros sintáticos encontrados
 """
 import sys
 from typing import NamedTuple, Optional
 from lexer import analisar, Token
 
 
-# -- 1. Nos da AST -------------------------------------------------
+# -- 1. Nós da AST -------------------------------------------------
 
 class NoPrograma(NamedTuple):
     declaracoes: list
@@ -91,7 +91,7 @@ OPS_ADITIVOS = {"MAIS", "MENOS"}
 OPS_MULTIPLICATIVOS = {"MULT", "DIV"}
 
 
-# -- 2. Erro sintatico ----------------------------------------------
+# -- 2. Erro sintático ----------------------------------------------
 class ErroSintatico(Exception):
     def __init__(self, linha, coluna, msg):
         super().__init__(f"Erro sintático ({linha}:{coluna}): {msg}")
@@ -105,7 +105,7 @@ def _descrever(tok: Token) -> str:
     return tok.tipo
 
 
-# -- 3. Parser: uma funcao por producao da BNF ----------------------
+# -- 3. Parser: uma função por produção da BNF ----------------------
 class Parser:
     def __init__(self, tokens: list[Token]):
         self.tokens = tokens
@@ -122,7 +122,7 @@ class Parser:
 
     def casa(self, *tipos) -> Token:
         """Consome o token atual se seu tipo estiver em `tipos`;
-        caso contrario, levanta ErroSintatico."""
+        caso contrário, levanta ErroSintatico."""
         tok = self.atual()
         if tok.tipo not in tipos:
             esperado = " ou ".join(tipos)
@@ -213,7 +213,7 @@ class Parser:
         return NoImpressao(expr, t.linha)
 
     # <selecao> ::= "if" "(" <condicao> ")" "{" <lista_comandos> "}"
-    #               [ "else" "{" <lista_comandos> "}" ]
+    #               [ "else" ( "{" <lista_comandos> "}" | <selecao> ) ]
     def selecao(self) -> NoSelecao:
         t = self.casa("IF")
         self.casa("ABRE_PAR")
@@ -223,7 +223,10 @@ class Parser:
         bloco_senao = None
         if self.atual().tipo == "ELSE":
             self.casa("ELSE")
-            bloco_senao = self.bloco()
+            if self.atual().tipo == "IF":
+                bloco_senao = [self.selecao()]
+            else:
+                bloco_senao = self.bloco()
         return NoSelecao(cond, bloco_se, bloco_senao, t.linha)
 
     # <repeticao> ::= "while" "(" <condicao> ")" "{" <lista_comandos> "}"
@@ -280,11 +283,8 @@ class Parser:
         dire = self.expressao()
         return NoBinaria(op.lexema, esq, dire, op.linha)
 
-    def _tentar_condicao_parentizada(self):
-        """Tenta casar '(' <condicao> ')' a partir da posição atual,
-        sem efeito colateral: sempre restaura self.pos antes de sair.
-        True  = deu certo -> cond_simples() refaz esse caminho "pra valer".
-        False = não é esse caso -> cond_simples() segue para <expressao>."""
+    def _tentar_condicao_parentizada(self) -> bool:
+        """Restaura self.pos antes de sair sem lançar exceções pesadas."""
         pos_salva = self.pos
         try:
             self.casa("ABRE_PAR")
@@ -340,9 +340,9 @@ class Parser:
 
 
 def parsear(fonte: str):
-    """Roda o lexico e depois o sintatico.
-    Retorna (ast, erros_lexicos, erro_sintatico) -- os dois ultimos
-    sao None/[] quando nao houve erro correspondente."""
+    """Roda o léxico e depois o sintático.
+    Retorna (ast, erros_lexicos, erro_sintatico) -- os dois últimos
+    são None/[] quando não houve erro correspondente."""
     tokens, erros_lex = analisar(fonte)
     if erros_lex:
         return None, erros_lex, None
@@ -353,23 +353,22 @@ def parsear(fonte: str):
         return None, [], e
 
 
-# -- 4. Impressao indentada da AST ----------------------------------
-def imprimir_ast(no, prefixo="", raiz=True):
+# -- 4. Impressão indentada da AST ----------------------------------
+def imprimir_ast(no):
     linhas = []
     nome = type(no).__name__
     if isinstance(no, NoPrograma):
         linhas.append(f"{nome}  ({len(no.declaracoes)} declaração(ões))")
         for i, d in enumerate(no.declaracoes):
             ultimo = i == len(no.declaracoes) - 1
-            linhas += _ramo(d, "", ultimo)
+            linhas += _ramo_rec(d, "", ultimo)
     else:
-        linhas.append(nome)
-        linhas += _ramo(no, "", True)
+        linhas += _ramo_rec(no, "", True)
     return "\n".join(linhas)
 
 
 def _rotulo(no):
-    """Uma linha resumindo o no (sem os filhos)."""
+    """Uma linha resumindo o nó (sem os filhos)."""
     if isinstance(no, NoFuncao):
         return f"NoFuncao  func {no.nome}({', '.join(no.parametros)})  [linha {no.linha}]"
     if isinstance(no, NoAtribuicao):
@@ -397,7 +396,7 @@ def _rotulo(no):
 
 
 def _filhos(no):
-    """Lista de (rotulo_da_aresta, no_filho) para cada no."""
+    """Lista de (rotulo_da_aresta, no_filho) para cada nó."""
     if isinstance(no, NoFuncao):
         return [(f"corpo[{i}]", c) for i, c in enumerate(no.corpo)]
     if isinstance(no, NoAtribuicao):
@@ -421,25 +420,10 @@ def _filhos(no):
     return []  # NoRolagem, NoNumero, NoId: folhas
 
 
-def _ramo(no, prefixo, ultimo):
+def _ramo_rec(no, prefixo="", ultimo=True, rotulo_aresta=None):
     conector = "└── " if ultimo else "├── "
-    linhas = [f"{prefixo}{conector}{_rotulo(no)}"]
-    novo_prefixo = prefixo + ("    " if ultimo else "│   ")
-    filhos = _filhos(no)
-    for i, (rotulo_aresta, filho) in enumerate(filhos):
-        e_ultimo = i == len(filhos) - 1
-        conector_f = "└── " if e_ultimo else "├── "
-        linhas.append(f"{novo_prefixo}{conector_f}[{rotulo_aresta}] {_rotulo(filho)}")
-        sub_prefixo = novo_prefixo + ("    " if e_ultimo else "│   ")
-        for j, (sub_rotulo, sub_filho) in enumerate(_filhos(filho)):
-            sub_ultimo = j == len(_filhos(filho)) - 1
-            linhas += _ramo_rec(sub_filho, sub_prefixo, sub_ultimo, sub_rotulo)
-    return linhas
-
-
-def _ramo_rec(no, prefixo, ultimo, rotulo_aresta):
-    conector = "└── " if ultimo else "├── "
-    linhas = [f"{prefixo}{conector}[{rotulo_aresta}] {_rotulo(no)}"]
+    aresta_str = f"[{rotulo_aresta}] " if rotulo_aresta else ""
+    linhas = [f"{prefixo}{conector}{aresta_str}{_rotulo(no)}"]
     novo_prefixo = prefixo + ("    " if ultimo else "│   ")
     filhos = _filhos(no)
     for i, (r, f) in enumerate(filhos):
