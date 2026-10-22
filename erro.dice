@@ -1,2 +1,2 @@
-x = 3dx + 2d6;
-y = a @ !b;
+x = 1d20
+print(x);

@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
-"""Analisador sintático da DiceLang.
-
+"""
 Entrada: código-fonte em DiceLang (arquivo como argumento ou stdin)
-Saida  : a árvore sintática (AST) em formato indentado, ou os
-         erros sintáticos encontrados
 """
 import sys
 from typing import NamedTuple, Optional
 from lexer import analisar, Token
 
-
-# -- 1. Nós da AST -------------------------------------------------
 
 class NoPrograma(NamedTuple):
     declaracoes: list
@@ -91,7 +86,6 @@ OPS_ADITIVOS = {"MAIS", "MENOS"}
 OPS_MULTIPLICATIVOS = {"MULT", "DIV"}
 
 
-# -- 2. Erro sintático ----------------------------------------------
 class ErroSintatico(Exception):
     def __init__(self, linha, coluna, msg):
         super().__init__(f"Erro sintático ({linha}:{coluna}): {msg}")
@@ -105,7 +99,6 @@ def _descrever(tok: Token) -> str:
     return tok.tipo
 
 
-# -- 3. Parser: uma função por produção da BNF ----------------------
 class Parser:
     def __init__(self, tokens: list[Token]):
         self.tokens = tokens
@@ -340,9 +333,6 @@ class Parser:
 
 
 def parsear(fonte: str):
-    """Roda o léxico e depois o sintático.
-    Retorna (ast, erros_lexicos, erro_sintatico) -- os dois últimos
-    são None/[] quando não houve erro correspondente."""
     tokens, erros_lex = analisar(fonte)
     if erros_lex:
         return None, erros_lex, None
@@ -353,7 +343,6 @@ def parsear(fonte: str):
         return None, [], e
 
 
-# -- 4. Impressão indentada da AST ----------------------------------
 def imprimir_ast(no):
     linhas = []
     nome = type(no).__name__
@@ -368,7 +357,6 @@ def imprimir_ast(no):
 
 
 def _rotulo(no):
-    """Uma linha resumindo o nó (sem os filhos)."""
     if isinstance(no, NoFuncao):
         return f"NoFuncao  func {no.nome}({', '.join(no.parametros)})  [linha {no.linha}]"
     if isinstance(no, NoAtribuicao):
@@ -396,7 +384,6 @@ def _rotulo(no):
 
 
 def _filhos(no):
-    """Lista de (rotulo_da_aresta, no_filho) para cada nó."""
     if isinstance(no, NoFuncao):
         return [(f"corpo[{i}]", c) for i, c in enumerate(no.corpo)]
     if isinstance(no, NoAtribuicao):
@@ -432,7 +419,6 @@ def _ramo_rec(no, prefixo="", ultimo=True, rotulo_aresta=None):
     return linhas
 
 
-# -- 5. Programa principal ------------------------------------------
 def main():
     if len(sys.argv) > 2:
         print("uso: python parser.py [arquivo.dice]", file=sys.stderr)
