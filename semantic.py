@@ -4,7 +4,7 @@ Analisador Semântico para DiceLang.
 Verifica escopos de variáveis, declarações de funções e regras de validação.
 """
 import sys
-from typing import Dict, Set, List
+from typing import Dict, Optional, Set, List
 from Parser import (
     No, NoPrograma, NoFuncao, NoAtribuicao, NoImpressao,
     NoSelecao, NoRepeticao, NoRetorno, NoChamada, NoBinaria,
@@ -24,12 +24,16 @@ class AnalisadorSemantico:
         # Escopo global e pilha para escopos locais (funções)
         self.escopo_global: Set[str] = set()
         self.escopos_locais: List[Set[str]] = []
-        
+
         # Mapeamento de funções: nome -> quantidade de parâmetros (aridade)
         self.funcoes: Dict[str, int] = {}
-        
+
         # Flag para controlar se o analisador está dentro de uma função
         self.em_funcao = False
+
+        # Variáveis atribuídas apenas dentro de if/while, sem garantia de
+        # estarem definidas depois do bloco (usado só para a mensagem de erro)
+        self.condicionais: Set[str] = set()
 
     def analisar(self, no_programa: NoPrograma):
         """Ponto de entrada: realiza duas etapas na AST."""
@@ -51,6 +55,10 @@ class AnalisadorSemantico:
     def generico(self, no: No):
         raise NotImplementedError(f"Método visitar_{type(no).__name__} não implementado.")
 
+    def _escopo_atual(self) -> Set[str]:
+        """Escopo onde as atribuições acontecem agora: topo da pilha ou global."""
+        return self.escopos_locais[-1] if self.escopos_locais else self.escopo_global
+
     def _variavel_declarada(self, nome: str) -> bool:
         """Verifica se a variável existe em qualquer escopo local (da pilha) ou no global."""
         for escopo in reversed(self.escopos_locais):
@@ -60,10 +68,38 @@ class AnalisadorSemantico:
 
     def _declarar_variavel(self, nome: str):
         """Registra a variável no escopo local atual (topo da pilha) ou no global."""
-        if self.escopos_locais:
-            self.escopos_locais[-1].add(nome)
-        else:
-            self.escopo_global.add(nome)
+        self._escopo_atual().add(nome)
+
+    def _visitar_bloco(self, comandos: list) -> Set[str]:
+        """Analisa um bloco ({ ... } de if/else/while) e devolve as variáveis
+        que ele definiu. Elas são retiradas do escopo ao sair do bloco: quem
+        chama decide se continuam valendo depois dele."""
+        escopo = self._escopo_atual()
+        antes = set(escopo)
+        for cmd in comandos:
+            self.visitar(cmd)
+        novas = escopo - antes
+        escopo -= novas
+        return novas
+
+    def _valor_constante(self, no: No) -> Optional[int]:
+        """Valor de uma expressão formada só por números e + - * /.
+        Devolve None se a expressão não for constante (ou dividir por zero)."""
+        if isinstance(no, NoNumero):
+            return no.valor
+        if isinstance(no, NoBinaria) and no.op in ("+", "-", "*", "/"):
+            esq = self._valor_constante(no.esq)
+            dire = self._valor_constante(no.dire)
+            if esq is None or dire is None:
+                return None
+            if no.op == "+":
+                return esq + dire
+            if no.op == "-":
+                return esq - dire
+            if no.op == "*":
+                return esq * dire
+            return esq // dire if dire != 0 else None
+        return None
 
     # --- Visitantes de Estrutura Principais ---
 
@@ -72,20 +108,22 @@ class AnalisadorSemantico:
             self.visitar(decl)
 
     def visitar_NoFuncao(self, no: NoFuncao):
-        self.em_funcao = True
-        
         # Cria um novo escopo local contendo os parâmetros
         escopo_local = set(no.parametros)
         if len(no.parametros) != len(escopo_local):
             raise ErroSemantico(no.linha, f"Parâmetros duplicados na função '{no.nome}'.")
 
+        self.em_funcao = True
         self.escopos_locais.append(escopo_local)
+        condicionais_externos = self.condicionais
+        self.condicionais = set()
 
         # Processa cada comando do corpo da função
         for cmd in no.corpo:
             self.visitar(cmd)
 
         # Destrói o escopo local ao sair da função
+        self.condicionais = condicionais_externos
         self.escopos_locais.pop()
         self.em_funcao = False
 
@@ -99,16 +137,19 @@ class AnalisadorSemantico:
 
     def visitar_NoSelecao(self, no: NoSelecao):
         self.visitar(no.cond)
-        for cmd in no.bloco_se:
-            self.visitar(cmd)
-        if no.bloco_senao:
-            for cmd in no.bloco_senao:
-                self.visitar(cmd)
+        novas_se = self._visitar_bloco(no.bloco_se)
+        novas_senao = self._visitar_bloco(no.bloco_senao) if no.bloco_senao else set()
+
+        # Depois do if só valem as variáveis definidas nos dois caminhos
+        garantidas = novas_se & novas_senao
+        self._escopo_atual().update(garantidas)
+        self.condicionais |= (novas_se | novas_senao) - garantidas
 
     def visitar_NoRepeticao(self, no: NoRepeticao):
         self.visitar(no.cond)
-        for cmd in no.bloco:
-            self.visitar(cmd)
+        # O corpo pode não executar nenhuma vez: nada definido nele vale depois
+        novas = self._visitar_bloco(no.bloco)
+        self.condicionais |= novas
 
     def visitar_NoRetorno(self, no: NoRetorno):
         if not self.em_funcao:
@@ -118,13 +159,13 @@ class AnalisadorSemantico:
     def visitar_NoChamada(self, no: NoChamada):
         if no.nome not in self.funcoes:
             raise ErroSemantico(no.linha, f"Função '{no.nome}' não declarada.")
-        
+
         aridade_esperada = self.funcoes[no.nome]
         aridade_fornecida = len(no.argumentos)
-        
+
         if aridade_esperada != aridade_fornecida:
             raise ErroSemantico(
-                no.linha, 
+                no.linha,
                 f"Função '{no.nome}' esperava {aridade_esperada} argumento(s), "
                 f"mas recebeu {aridade_fornecida}."
             )
@@ -138,8 +179,8 @@ class AnalisadorSemantico:
         self.visitar(no.esq)
         self.visitar(no.dire)
 
-        # Prevenção de divisão por zero literal
-        if no.op == "/" and isinstance(no.dire, NoNumero) and no.dire.valor == 0:
+        # Prevenção de divisão por zero constante (ex.: 5/0 ou 5/(2-2))
+        if no.op == "/" and self._valor_constante(no.dire) == 0:
             raise ErroSemantico(no.linha, "Divisão por zero constante identificada.")
 
     def visitar_NoRolagem(self, no: NoRolagem):
@@ -150,6 +191,12 @@ class AnalisadorSemantico:
 
     def visitar_NoId(self, no: NoId):
         if not self._variavel_declarada(no.nome):
+            if no.nome in self.condicionais:
+                raise ErroSemantico(
+                    no.linha,
+                    f"Variável '{no.nome}' pode não estar definida: "
+                    "ela só é atribuída dentro de um if/while."
+                )
             raise ErroSemantico(no.linha, f"Variável '{no.nome}' usada antes da atribuição/declaração.")
 
     def visitar_NoNumero(self, no: NoNumero):

@@ -202,7 +202,11 @@ def main():
         return 1
 
     # Executa a AST caso todas as etapas anteriores passem
-    executar_programa(ast)
+    try:
+        executar_programa(ast)
+    except (ZeroDivisionError, RuntimeError) as e:
+        print(f"Erro de execução: {e}", file=sys.stderr)
+        return 1
     return 0
 
 
