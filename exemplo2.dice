@@ -1,0 +1,9 @@
+func teste(bonus){
+    x=6;
+    x = x/2;
+    return x + bonus;
+
+}
+
+print(teste(5));
+print(7/2);

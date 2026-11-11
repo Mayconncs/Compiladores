@@ -1,0 +1,4 @@
+func ataque(bonus) {
+    return 1d20 + bonus;
+}
+dano = ataque(3, 5);
