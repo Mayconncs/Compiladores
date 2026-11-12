@@ -125,6 +125,12 @@ class Interpretador:
     # --- Visitantes de Expressões e Valores ---
 
     def visitar_NoBinaria(self, no: NoBinaria) -> Any:
+        # && e || com curto-circuito (igual ao 'and'/'or' do código gerado)
+        if no.op == "&&":
+            return 1 if (self.visitar(no.esq) and self.visitar(no.dire)) else 0
+        if no.op == "||":
+            return 1 if (self.visitar(no.esq) or self.visitar(no.dire)) else 0
+
         esq = self.visitar(no.esq)
         dire = self.visitar(no.dire)
 

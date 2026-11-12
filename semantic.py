@@ -35,6 +35,9 @@ class AnalisadorSemantico:
         # estarem definidas depois do bloco (usado só para a mensagem de erro)
         self.condicionais: Set[str] = set()
 
+        # Nomes atribuídos dentro da função atual (ver _atribuidos)
+        self.atribuidos_func: Set[str] = set()
+
     def analisar(self, no_programa: NoPrograma):
         """Ponto de entrada: realiza duas etapas na AST."""
         # 1ª Passagem: Registrar todas as funções declaradas
@@ -101,6 +104,20 @@ class AnalisadorSemantico:
             return esq // dire if dire != 0 else None
         return None
 
+    def _atribuidos(self, comandos: list) -> Set[str]:
+        """Nomes atribuídos em qualquer ponto de um corpo (inclui if/else/while).
+        No Python gerado, esses nomes são locais da função inteira."""
+        nomes = set()
+        for cmd in comandos:
+            if isinstance(cmd, NoAtribuicao):
+                nomes.add(cmd.alvo)
+            elif isinstance(cmd, NoSelecao):
+                nomes |= self._atribuidos(cmd.bloco_se)
+                nomes |= self._atribuidos(cmd.bloco_senao or [])
+            elif isinstance(cmd, NoRepeticao):
+                nomes |= self._atribuidos(cmd.bloco)
+        return nomes
+
     # --- Visitantes de Estrutura Principais ---
 
     def visitar_NoPrograma(self, no: NoPrograma):
@@ -113,7 +130,12 @@ class AnalisadorSemantico:
         if len(no.parametros) != len(escopo_local):
             raise ErroSemantico(no.linha, f"Parâmetros duplicados na função '{no.nome}'.")
 
+        for p in no.parametros:
+            if p in self.funcoes:
+                raise ErroSemantico(no.linha, f"Parâmetro '{p}' tem o mesmo nome de uma função.")
+
         self.em_funcao = True
+        self.atribuidos_func = self._atribuidos(no.corpo)
         self.escopos_locais.append(escopo_local)
         condicionais_externos = self.condicionais
         self.condicionais = set()
@@ -130,6 +152,8 @@ class AnalisadorSemantico:
     def visitar_NoAtribuicao(self, no: NoAtribuicao):
         # Analisa a expressão antes de declarar a variável alvo (evita usar x em x = x + 1 se x não existia)
         self.visitar(no.expr)
+        if no.alvo in self.funcoes:
+            raise ErroSemantico(no.linha, f"'{no.alvo}' já é nome de uma função e não pode ser variável.")
         self._declarar_variavel(no.alvo)
 
     def visitar_NoImpressao(self, no: NoImpressao):
@@ -190,6 +214,12 @@ class AnalisadorSemantico:
             raise ErroSemantico(no.linha, f"Número de faces inválido ({no.faces}). Deve ser > 0.")
 
     def visitar_NoId(self, no: NoId):
+        if (self.em_funcao and no.nome in self.atribuidos_func
+                and no.nome not in self._escopo_atual()):
+            raise ErroSemantico(
+                no.linha,
+                f"Variável '{no.nome}' é atribuída nesta função e é usada antes de ter valor local."
+            )
         if not self._variavel_declarada(no.nome):
             if no.nome in self.condicionais:
                 raise ErroSemantico(
