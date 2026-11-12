@@ -172,11 +172,16 @@ def executar_programa(ast: NoPrograma):
 
 
 def main():
+    # Modo compilador: gera código Python a partir da AST e executa o resultado
+    if "--compilar" in sys.argv[1:]:
+        from codegen import main as main_codegen
+        return main_codegen([a for a in sys.argv[1:] if a != "--compilar"])
+
     from Parser import parsear
     from semantic import analisar_semantica, ErroSemantico
 
     if len(sys.argv) > 2:
-        print("uso: python interpreter.py [arquivo.dice]", file=sys.stderr)
+        print("uso: python interpreter.py [--compilar] [arquivo.dice]", file=sys.stderr)
         return 2
 
     if len(sys.argv) == 2:
