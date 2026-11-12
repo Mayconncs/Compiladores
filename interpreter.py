@@ -14,24 +14,19 @@ from Parser import (
 
 
 class RetornoExcecao(Exception):
-    """Exceção de controle de fluxo usada para interromper a execução de uma função e retornar um valor."""
     def __init__(self, valor: Any):
         self.valor = valor
 
 
 class Interpretador:
     def __init__(self):
-        # Mapeamento de funções declaradas: nome -> NoFuncao
         self.funcoes: Dict[str, NoFuncao] = {}
         
-        # Escopo global de variáveis
         self.escopo_global: Dict[str, Any] = {}
         
-        # Pilha de escopos locais (para chamadas de funções)
         self.escopos_locais: List[Dict[str, Any]] = []
 
     def executar(self, no_programa: NoPrograma):
-        """Ponto de entrada: registra funções e executa as declarações de nível superior."""
         # Passagem 1: Mapear todas as funções declaradas
         for decl in no_programa.declaracoes:
             if isinstance(decl, NoFuncao):
@@ -49,7 +44,6 @@ class Interpretador:
         raise NotImplementedError(f"Método visitar_{type(no).__name__} não implementado no interpretador.")
 
     def _obter_variavel(self, nome: str) -> Any:
-        """Obtém o valor de uma variável buscando no escopo local atual e depois no global."""
         if self.escopos_locais and nome in self.escopos_locais[-1]:
             return self.escopos_locais[-1][nome]
         if nome in self.escopo_global:
@@ -57,22 +51,18 @@ class Interpretador:
         raise RuntimeError(f"Variável não definida em tempo de execução: '{nome}'")
 
     def _definir_variavel(self, nome: str, valor: Any):
-        """Define o valor de uma variável no escopo atual."""
         if self.escopos_locais:
             self.escopos_locais[-1][nome] = valor
         else:
             self.escopo_global[nome] = valor
 
-    # --- Visitantes de Estrutura ---
 
     def visitar_NoPrograma(self, no: NoPrograma):
         for decl in no.declaracoes:
-            # Executa apenas comandos no nível global (funções já foram mapeadas)
             if not isinstance(decl, NoFuncao):
                 self.visitar(decl)
 
     def visitar_NoFuncao(self, no: NoFuncao):
-        # Declarações de função são ignoradas durante o fluxo normal
         pass
 
     def visitar_NoAtribuicao(self, no: NoAtribuicao):
@@ -104,14 +94,12 @@ class Interpretador:
     def visitar_NoChamada(self, no: NoChamada) -> Any:
         no_func = self.funcoes[no.nome]
         
-        # Avaliar os argumentos passados
         valores_args = [self.visitar(arg) for arg in no.argumentos]
 
-        # Criar novo escopo local mapeando parâmetros aos valores
         escopo_local = dict(zip(no_func.parametros, valores_args))
         self.escopos_locais.append(escopo_local)
 
-        valor_retorno = 0  # Retorno padrão caso a função não tenha return
+        valor_retorno = 0 
         try:
             for cmd in no_func.corpo:
                 self.visitar(cmd)
@@ -122,7 +110,6 @@ class Interpretador:
 
         return valor_retorno
 
-    # --- Visitantes de Expressões e Valores ---
 
     def visitar_NoBinaria(self, no: NoBinaria) -> Any:
         # && e || com curto-circuito (igual ao 'and'/'or' do código gerado)
